@@ -9,25 +9,31 @@ export const setupSocketIO = (io) => {
 
     // Join room for a specific hospital / department queue
     socket.on('join_hospital', (hospitalId) => {
-      socket.join(`hospital_${hospitalId}`);
-      console.log(`Socket ${socket.id} joined hospital_${hospitalId}`);
+      if (hospitalId) {
+        socket.join(`hospital_${hospitalId}`);
+        console.log(`Socket ${socket.id} joined hospital_${hospitalId}`);
+      }
     });
 
     socket.on('join_doctor_queue', (doctorId) => {
-      socket.join(`doctor_${doctorId}`);
-      console.log(`Socket ${socket.id} joined doctor_${doctorId}`);
+      if (doctorId) {
+        socket.join(`doctor_${doctorId}`);
+        console.log(`Socket ${socket.id} joined doctor_${doctorId}`);
+      }
     });
 
     // Doctor calls next token
-    socket.on('call_token', (data) => {
-      io.to(`doctor_${data.doctorId}`).emit('token_called', data);
-      io.to(`hospital_${data.hospitalId}`).emit('queue_updated', data);
+    socket.on('call_token', (data = {}) => {
+      if (data.doctorId) io.to(`doctor_${data.doctorId}`).emit('token_called', data);
+      if (data.hospitalId) io.to(`hospital_${data.hospitalId}`).emit('queue_updated', data);
+      io.emit('global_queue_updated', data);
     });
 
     // Consultation completed
-    socket.on('complete_consultation', (data) => {
-      io.to(`doctor_${data.doctorId}`).emit('consultation_completed', data);
-      io.to(`hospital_${data.hospitalId}`).emit('queue_updated', data);
+    socket.on('complete_consultation', (data = {}) => {
+      if (data.doctorId) io.to(`doctor_${data.doctorId}`).emit('consultation_completed', data);
+      if (data.hospitalId) io.to(`hospital_${data.hospitalId}`).emit('queue_updated', data);
+      io.emit('global_queue_updated', data);
     });
 
     // Super Admin approves or rejects hospital admin

@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { User } from './models/User.js';
 import { Hospital } from './models/Hospital.js';
 import { HospitalAdmin } from './models/HospitalAdmin.js';
@@ -7,6 +9,10 @@ import { Department } from './models/Department.js';
 import { Doctor } from './models/Doctor.js';
 import { Appointment } from './models/Appointment.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+dotenv.config({ path: path.resolve(__dirname, '.env') });
 dotenv.config();
 
 const seedDatabase = async () => {

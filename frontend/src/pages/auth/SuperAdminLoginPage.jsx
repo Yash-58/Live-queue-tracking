@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useApp } from '../../context/AppContext';
 import {
   Crown,
+  Shield,
   ShieldCheck,
   Lock,
   Mail,
@@ -152,7 +153,7 @@ export const SuperAdminLoginPage = () => {
                 <label className="block text-xs font-bold text-slate-300 uppercase tracking-wider mb-1.5 flex items-center justify-between">
                   <span>Security Protocol Code</span>
                   <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-semibold normal-case">
-                    <ShieldCheck className="w-3 h-3" /> Hardware Verified
+                    {ShieldCheck ? <ShieldCheck className="w-3 h-3" /> : <Shield className="w-3 h-3" />} Hardware Verified
                   </span>
                 </label>
                 <div className="relative">

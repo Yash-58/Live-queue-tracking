@@ -307,7 +307,7 @@ export const SuperAdminDashboard = () => {
                   title="1-to-1 Mapping"
                   value="100%"
                   subtitle="Strict Constraint Active"
-                  icon={ShieldCheck}
+                  icon={ShieldCheck || Shield}
                   color="purple"
                 />
               </div>
@@ -747,7 +747,7 @@ export const SuperAdminDashboard = () => {
               {/* Informational Guidance Notice */}
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-600 space-y-1">
                 <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  {ShieldCheck ? <ShieldCheck className="w-4 h-4 text-emerald-600" /> : <Shield className="w-4 h-4 text-emerald-600" />}
                   <span>Verification Policy Enforcement:</span>
                 </span>
                 <p>

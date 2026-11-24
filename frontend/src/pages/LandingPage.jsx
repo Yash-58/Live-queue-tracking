@@ -225,7 +225,7 @@ export const LandingPage = () => {
                   <span>Super Admin</span>
                 </span>
                 <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center">
-                  <ShieldCheck className="w-4 h-4" />
+                  {ShieldCheck ? <ShieldCheck className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
                 </div>
               </div>
 

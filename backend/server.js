@@ -3,9 +3,21 @@ import http from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { connectDB } from './config/db.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { connectDB, isConnectedToDB } from './config/db.js';
 import { setupSocketIO } from './socket/socketHandler.js';
 import { errorHandler } from './middleware/errorHandler.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load environment variables
+dotenv.config({ path: path.resolve(__dirname, '.env') });
+dotenv.config();
+
+// Connect to MongoDB
+connectDB();
 
 // Import Routes
 import authRoutes from './routes/authRoutes.js';
@@ -14,12 +26,6 @@ import adminRoutes from './routes/adminRoutes.js';
 import doctorRoutes from './routes/doctorRoutes.js';
 import patientRoutes from './routes/patientRoutes.js';
 import queueRoutes from './routes/queueRoutes.js';
-
-// Load environment variables
-dotenv.config();
-
-// Connect to MongoDB
-connectDB();
 
 const app = express();
 const server = http.createServer(app);
@@ -47,13 +53,32 @@ app.use(express.urlencoded({ extended: true }));
 // Setup Real-time Sockets
 setupSocketIO(io);
 
+// Root status routes so visiting in browser shows clean status instead of "Cannot GET /"
+app.get('/', (req, res) => {
+  res.json({
+    status: 'online',
+    message: '🏥 MediQueue Backend API & Socket Server is Running',
+    database: isConnectedToDB() ? 'MongoDB Connected' : 'Offline Demo Mode (Ready)',
+    health: '/api/health',
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/api', (req, res) => {
+  res.json({
+    status: 'online',
+    message: 'MediQueue API Root',
+    endpoints: ['/api/health', '/api/auth', '/api/super-admin', '/api/admin', '/api/doctor', '/api/patient', '/api/queue']
+  });
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
     service: 'MediQueue Backend API',
-    database: 'MongoDB connected',
+    database: isConnectedToDB() ? 'MongoDB Connected' : 'Offline Demo Mode (Ready)',
     socket: 'Active'
   });
 });
@@ -69,12 +94,29 @@ app.use('/api/queue', queueRoutes);
 // Error Handling Middleware
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 5000;
+const DEFAULT_PORT = parseInt(process.env.PORT || '5001', 10);
+let currentPort = DEFAULT_PORT;
 
-server.listen(PORT, () => {
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE' || err.code === 'EACCES') {
+    currentPort += 1;
+    console.warn(`⚠️ Port ${currentPort - 1} unavailable (${err.code}). Trying fallback port ${currentPort}...`);
+    setTimeout(() => {
+      server.listen(currentPort, '0.0.0.0');
+    }, 500);
+  } else {
+    console.error('Server error:', err);
+  }
+});
+
+server.on('listening', () => {
+  const address = server.address();
+  const port = typeof address === 'string' ? address : address?.port;
   console.log(`=======================================================`);
-  console.log(`🏥 MediQueue Backend Server Running on Port ${PORT}`);
+  console.log(`🏥 MediQueue Backend Server Running on Port ${port}`);
   console.log(`📡 Real-time Socket.IO Server Ready`);
   console.log(`🛡️  Super Admin & 1-to-1 Mapping Governance Active`);
   console.log(`=======================================================`);
 });
+
+server.listen(DEFAULT_PORT, '0.0.0.0');
