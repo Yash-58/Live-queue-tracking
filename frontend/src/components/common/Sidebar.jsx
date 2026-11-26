@@ -33,6 +33,7 @@ export const Sidebar = ({ role, activeTab, onTabChange, isMobileOpen, onCloseMob
 
   const patientNav = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'hospitals', label: 'Registered Hospitals', icon: Building2, badge: (hospitals || []).length },
     { id: 'book', label: 'Book Appointment', icon: CalendarPlus },
     { id: 'live-queue', label: 'Live Queue', icon: Activity, badge: queueState.patientToken },
     { id: 'appointments', label: 'My Appointments', icon: CalendarCheck },

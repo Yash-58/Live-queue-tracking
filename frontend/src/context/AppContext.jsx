@@ -234,6 +234,27 @@ export const AppProvider = ({ children }) => {
     }
   };
 
+  // Switch specifically which Doctor user to simulate across different hospitals
+  const switchDoctorUser = (doctorId) => {
+    const doc = doctors.find(d => d.id === doctorId);
+    if (doc) {
+      setCurrentRole('doctor');
+      const docUser = {
+        id: doc.id,
+        name: doc.name,
+        specialization: doc.specialization,
+        department: doc.department,
+        hospital: doc.hospital,
+        email: doc.email,
+        phone: doc.phone,
+        role: 'doctor',
+        avatar: doc.avatar
+      };
+      setCurrentUser(docUser);
+      addToast(`Doctor switched to: ${doc.name} [${doc.hospital}]`, 'info');
+    }
+  };
+
   // Login handler
   const loginAs = (role, customData = {}) => {
     switchRole(role);
@@ -705,8 +726,26 @@ export const AppProvider = ({ children }) => {
     addToast('Demo hospital data reset to factory default!', 'success');
   };
 
+  // Update User Profile
+  const updateUserProfile = (updatedData) => {
+    setCurrentUser(prev => {
+      const merged = { ...prev, ...updatedData };
+      localStorage.setItem('mediqueue_user', JSON.stringify(merged));
+      return merged;
+    });
+
+    setPatients(prev => prev.map(p => {
+      if (p.id === currentUser?.id || p.email === currentUser?.email) {
+        return { ...p, ...updatedData };
+      }
+      return p;
+    }));
+
+    addToast('Profile updated successfully!', 'success');
+  };
+
   // Book Appointment
-  const bookAppointment = ({ department, doctorId, date, timeSlot, reason, priority = 'Normal' }) => {
+  const bookAppointment = ({ department, doctorId, date, timeSlot, reason, priority = 'Normal', hospital }) => {
     const doctor = doctors.find(d => d.id === doctorId) || doctors[0];
     const dept = departments.find(d => d.name === department) || departments[0];
 
@@ -719,14 +758,14 @@ export const AppProvider = ({ children }) => {
       token,
       patientId: currentUser?.id || 'pat-1',
       patientName: currentUser?.name || 'Rahul Verma',
-      patientAge: 28,
-      patientGender: 'Male',
+      patientAge: currentUser?.age || 28,
+      patientGender: currentUser?.gender || 'Male',
       patientPhone: currentUser?.phone || '98765 43210',
       doctorId: doctor.id,
       doctorName: doctor.name,
       doctorSpecialization: doctor.specialization,
       department: department || doctor.department,
-      hospital: doctor.hospital || 'City Care Hospital',
+      hospital: hospital || doctor.hospital || 'City Care Hospital',
       date: date || '20 May 2026',
       time: timeSlot || '11:00 AM',
       status: 'Waiting',
@@ -960,6 +999,7 @@ export const AppProvider = ({ children }) => {
         toasts,
         addToast,
         removeToast,
+        updateUserProfile,
         bookAppointment,
         cancelAppointment,
         completeCurrentConsultation,
@@ -980,6 +1020,7 @@ export const AppProvider = ({ children }) => {
         currentHospitalAdmin,
         activeHospitalAdminId,
         switchHospitalAdminUser,
+        switchDoctorUser,
         approveHospitalAdmin,
         rejectHospitalAdmin,
         registerHospitalAdmin,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { Sidebar } from '../../components/common/Sidebar';
 import { Navbar } from '../../components/common/Navbar';
@@ -23,7 +23,11 @@ import {
   Stethoscope,
   Activity,
   AlertTriangle,
-  Search
+  Search,
+  Building,
+  Building2,
+  ShieldCheck,
+  Hospital
 } from 'lucide-react';
 
 export const DoctorDashboard = () => {
@@ -41,16 +45,44 @@ export const DoctorDashboard = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
-  // Active Doctor record
-  const currentDoc = doctors.find(d => d.id === currentUser?.id) || doctors[0];
+  // 1. Identify active logged-in doctor
+  const currentDoc = doctors.find(
+    d => d.id === currentUser?.id || d.email?.toLowerCase() === currentUser?.email?.toLowerCase()
+  ) || doctors[0];
 
-  // Active patient in consultation
-  const activeServing = appointments.find(
-    a => a.status === 'In Consultation' && a.doctorId === currentDoc.id
-  ) || appointments[0];
+  // 2. Doctor's registered hospital
+  const doctorHospital = currentDoc?.hospital || currentUser?.hospital || 'City Care Hospital';
+
+  // Safe normalized hospital name comparison
+  const isMatchingHospital = (hosp1, hosp2) => {
+    if (!hosp1 || !hosp2) return false;
+    const h1 = hosp1.toLowerCase().trim();
+    const h2 = hosp2.toLowerCase().trim();
+    return h1 === h2 || h1.includes(h2) || h2.includes(h1);
+  };
+
+  // 3. STRICT ISOLATION: Only appointments belonging to THIS DOCTOR'S HOSPITAL!
+  const hospitalAppointments = appointments.filter(a =>
+    isMatchingHospital(a.hospital, doctorHospital)
+  );
+
+  // 4. Appointments assigned specifically to this doctor in this hospital
+  const doctorAppointments = hospitalAppointments.filter(a =>
+    a.doctorId === currentDoc.id || a.doctorName?.toLowerCase() === currentDoc.name?.toLowerCase()
+  );
+
+  // 5. Department-level appointments in this doctor's hospital (for department OPD coverage)
+  const departmentAppointments = hospitalAppointments.filter(a =>
+    a.department === currentDoc.department
+  );
+
+  // 6. Active patient in consultation for this doctor / hospital
+  const activeServing = doctorAppointments.find(a => a.status === 'In Consultation') ||
+    departmentAppointments.find(a => a.status === 'In Consultation') ||
+    null;
 
   // Consultation Notes state
-  const [consultationNotes, setConsultationNotes] = useState(activeServing?.notes || 'Patient is stable. Resting pulse 76 bpm.');
+  const [consultationNotes, setConsultationNotes] = useState(activeServing?.notes || '');
 
   // Availability schedule local state
   const [availabilitySchedule, setAvailabilitySchedule] = useState(
@@ -68,19 +100,42 @@ export const DoctorDashboard = () => {
   // Selected patient for details view
   const [selectedPatientRecord, setSelectedPatientRecord] = useState(activeServing);
 
+  // Keep selected record in sync with doctor & hospital
+  useEffect(() => {
+    if (activeServing) {
+      setSelectedPatientRecord(activeServing);
+      setConsultationNotes(activeServing.notes || 'Patient is stable. Resting pulse 76 bpm.');
+    } else {
+      const firstInHospital = doctorAppointments[0] || departmentAppointments[0] || hospitalAppointments[0] || null;
+      setSelectedPatientRecord(firstInHospital);
+      setConsultationNotes(firstInHospital?.notes || '');
+    }
+  }, [currentDoc.id, doctorHospital]);
+
   // Doctor appointments tab filter
   const [doctorAptTab, setDoctorAptTab] = useState('Upcoming');
 
-  // Stats calculation
-  const totalPatientsToday = appointments.filter(a => a.doctorId === currentDoc.id).length || 25;
-  const completedToday = appointments.filter(a => a.doctorId === currentDoc.id && a.status === 'Completed').length || 12;
-  const waitingToday = appointments.filter(a => a.doctorId === currentDoc.id && a.status === 'Waiting').length || 13;
+  // Stats calculation strictly for this doctor & hospital
+  const totalPatientsToday = doctorAppointments.length;
+  const completedToday = doctorAppointments.filter(a => a.status === 'Completed').length;
+  const waitingToday = doctorAppointments.filter(a => a.status === 'Waiting').length;
 
-  // Filtered appointments for Appointments section
-  const docFilteredApts = appointments.filter(a => {
+  // Filtered appointments for Appointments table (strictly this hospital)
+  const docFilteredApts = (doctorAppointments.length > 0 ? doctorAppointments : departmentAppointments).filter(a => {
     if (doctorAptTab === 'Upcoming') return a.status === 'Waiting' || a.status === 'In Consultation';
-    return a.status === 'Completed';
+    if (doctorAptTab === 'Completed') return a.status === 'Completed';
+    return true;
   });
+
+  // Waiting queue strictly for this doctor / hospital
+  const waitingQueueForDoctor = (doctorAppointments.length > 0 ? doctorAppointments : departmentAppointments).filter(
+    a => a.status === 'Waiting'
+  );
+
+  // Today's Queue list strictly for this hospital
+  const queueToDisplay = (doctorAppointments.length > 0 ? doctorAppointments : departmentAppointments).filter(
+    a => a.status === 'In Consultation' || a.status === 'Waiting'
+  );
 
   const handleToggleDay = (day) => {
     setAvailabilitySchedule(prev => ({
@@ -108,7 +163,7 @@ export const DoctorDashboard = () => {
   };
 
   const handleSaveNotes = () => {
-    if (activeServing) {
+    if (activeServing?.token) {
       saveConsultationNotes(activeServing.token, consultationNotes);
     }
   };
@@ -140,70 +195,104 @@ export const DoctorDashboard = () => {
 
         <main className="p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto space-y-6">
 
+          {/* Hospital Isolation Header Banner */}
+          <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-card flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-2xl flex-shrink-0">
+                🩺
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                    {currentDoc.name}
+                  </h2>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
+                    {currentDoc.specialization}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 flex items-center gap-2 mt-1">
+                  <span className="font-semibold text-slate-700 flex items-center gap-1">
+                    <Building2 className="w-3.5 h-3.5 text-blue-600" />
+                    <span>{doctorHospital}</span>
+                  </span>
+                  <span>•</span>
+                  <span>{currentDoc.department} OPD ({currentDoc.room})</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1.5 shadow-sm">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                <span>Showing Appointments for: <strong>{doctorHospital}</strong></span>
+              </div>
+            </div>
+          </div>
+
           {/* Quick Screen Tabs */}
           <div className="bg-white p-2 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-1.5 overflow-x-auto text-xs font-semibold">
             {[
               { id: 'dashboard', label: '1. Doctor Dashboard' },
-              { id: 'today-queue', label: "2. Today's Queue" },
+              { id: 'today-queue', label: "2. Today's Queue", badge: queueToDisplay.length },
               { id: 'patients', label: '3. Patient Details' },
               { id: 'consultation', label: '4. Consultation Actions' },
               { id: 'availability', label: '5. Availability' },
-              { id: 'appointments', label: '6. Appointments' }
+              { id: 'appointments', label: '6. Appointments', count: docFilteredApts.length }
             ].map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-3.5 py-2 rounded-xl whitespace-nowrap transition-all ${
+                className={`px-3.5 py-2 rounded-xl whitespace-nowrap transition-all flex items-center gap-1.5 ${
                   activeTab === tab.id
-                    ? 'bg-blue-600 text-white shadow-sm'
+                    ? 'bg-blue-600 text-white shadow-sm font-bold'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
-                {tab.label}
+                <span>{tab.label}</span>
+                {tab.badge !== undefined && (
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                    activeTab === tab.id ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {tab.badge}
+                  </span>
+                )}
               </button>
             ))}
           </div>
 
-          {/* SECTION 1: Doctor Dashboard Overview */}
+          {/* ========================================================= */}
+          {/* SECTION 1: Doctor Dashboard Overview                      */}
+          {/* ========================================================= */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
-              {/* Header Greeting */}
-              <div>
-                <h2 className="text-2xl font-black text-slate-900 tracking-tight">
-                  Welcome, {currentDoc.name}
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Here's your today's overview • {currentDoc.department} OPD ({currentDoc.room})
-                </p>
-              </div>
 
-              {/* 4 Stat Cards matching reference */}
+              {/* 4 Stat Cards Strictly for this Hospital */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatCard
                   title="Total Patients"
                   value={totalPatientsToday}
-                  subtitle="Scheduled today"
+                  subtitle={`Scheduled at ${doctorHospital.split(' ')[0]}`}
                   icon={Users}
                   color="blue"
                 />
                 <StatCard
                   title="Completed"
                   value={completedToday}
-                  subtitle="Finished consultations"
+                  subtitle="Finished today"
                   icon={CheckCircle}
                   color="emerald"
                 />
                 <StatCard
-                  title="Waiting"
+                  title="Waiting in Queue"
                   value={waitingToday}
                   subtitle="In waiting lounge"
                   icon={Clock}
                   color="amber"
                 />
                 <StatCard
-                  title="Avg. Time"
+                  title="Avg. Consultation"
                   value="8 mins"
-                  subtitle="Per consultation"
+                  subtitle="Per patient OPD"
                   icon={Timer}
                   color="purple"
                 />
@@ -217,35 +306,56 @@ export const DoctorDashboard = () => {
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                        Currently Serving
+                        Currently Serving ({doctorHospital})
                       </span>
-                      <StatusBadge status="In Consultation" />
+                      {activeServing ? (
+                        <StatusBadge status="In Consultation" />
+                      ) : (
+                        <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
+                          Desk Ready
+                        </span>
+                      )}
                     </div>
 
-                    <div className="bg-blue-50/60 p-5 rounded-2xl border border-blue-100 flex items-center justify-between">
-                      <div>
-                        <span className="text-4xl font-black text-blue-700 tracking-tight">
-                          {activeServing?.token || 'A-12'}
-                        </span>
-                        <h4 className="text-base font-bold text-slate-900 mt-1">
-                          {activeServing?.patientName || 'Rahul Verma'}
-                        </h4>
-                        <p className="text-xs text-slate-500">
-                          {activeServing?.patientAge || 28} Yrs, {activeServing?.patientGender || 'Male'} • Phone: {activeServing?.patientPhone || '98765 43210'}
+                    {activeServing ? (
+                      <div className="bg-blue-50/60 p-5 rounded-2xl border border-blue-100 flex items-center justify-between">
+                        <div>
+                          <span className="text-4xl font-black text-blue-700 tracking-tight">
+                            {activeServing.token}
+                          </span>
+                          <h4 className="text-base font-bold text-slate-900 mt-1">
+                            {activeServing.patientName}
+                          </h4>
+                          <p className="text-xs text-slate-500">
+                            {activeServing.patientAge || 28} Yrs, {activeServing.patientGender || 'Male'} • Phone: {activeServing.patientPhone || '98765 43210'}
+                          </p>
+                          <p className="text-[11px] text-blue-600 font-semibold mt-1">
+                            Hospital: {activeServing.hospital}
+                          </p>
+                        </div>
+
+                        <div className="text-right">
+                          <span className="text-[11px] font-bold text-blue-600 bg-white px-2.5 py-1 rounded-lg border border-blue-200">
+                            {activeServing.time || '11:15 AM'}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="py-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 space-y-2">
+                        <Users className="w-8 h-8 text-slate-300 mx-auto" />
+                        <p className="text-sm font-bold text-slate-700">No Patient Currently in Consultation</p>
+                        <p className="text-xs text-slate-400 max-w-xs mx-auto">
+                          Ready to call the next waiting patient for {doctorHospital} • {currentDoc.department}.
                         </p>
                       </div>
+                    )}
 
-                      <div className="text-right">
-                        <span className="text-[11px] font-bold text-blue-600 bg-white px-2.5 py-1 rounded-lg border border-blue-200">
-                          {activeServing?.time || '11:15 AM'}
-                        </span>
+                    {activeServing?.reason && (
+                      <div className="mt-4 p-3.5 bg-slate-50 rounded-2xl text-xs space-y-1">
+                        <span className="text-slate-400 font-semibold block uppercase text-[10px]">Reason for Visit</span>
+                        <p className="font-medium text-slate-800">{activeServing.reason}</p>
                       </div>
-                    </div>
-
-                    <div className="mt-4 p-3.5 bg-slate-50 rounded-2xl text-xs space-y-1">
-                      <span className="text-slate-400 font-semibold block uppercase text-[10px]">Reason for Visit</span>
-                      <p className="font-medium text-slate-800">{activeServing?.reason || 'Chest pain & discomfort'}</p>
-                    </div>
+                    )}
                   </div>
 
                   <div className="mt-6 pt-4 border-t border-slate-100 flex items-center gap-3">
@@ -256,37 +366,43 @@ export const DoctorDashboard = () => {
                       <Activity className="w-4 h-4" />
                       <span>Open Consultation Desk</span>
                     </button>
-                    <button
-                      onClick={completeCurrentConsultation}
-                      className="py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5"
-                    >
-                      <CheckCheck className="w-4 h-4" />
-                      <span>Complete</span>
-                    </button>
+                    {activeServing && (
+                      <button
+                        onClick={completeCurrentConsultation}
+                        className="py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5"
+                      >
+                        <CheckCheck className="w-4 h-4" />
+                        <span>Complete</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {/* Up Next Patient List */}
+                {/* Up Next Patient List Strictly for this Doctor's Hospital */}
                 <div className="bg-white rounded-3xl p-6 border border-slate-100 shadow-card flex flex-col justify-between">
                   <div>
                     <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center gap-2">
                         <Users className="w-4 h-4 text-blue-600" />
-                        <h3 className="font-bold text-slate-800 text-sm">Up Next in Queue</h3>
+                        <h3 className="font-bold text-slate-800 text-sm">
+                          Up Next in Queue ({doctorHospital})
+                        </h3>
                       </div>
                       <button
                         onClick={() => setActiveTab('today-queue')}
                         className="text-xs font-bold text-blue-600 hover:underline"
                       >
-                        View All
+                        View All ({waitingQueueForDoctor.length})
                       </button>
                     </div>
 
                     <div className="divide-y divide-slate-100">
-                      {appointments
-                        .filter(a => a.status === 'Waiting')
-                        .slice(0, 4)
-                        .map((apt) => (
+                      {waitingQueueForDoctor.length === 0 ? (
+                        <div className="py-8 text-center text-xs text-slate-400">
+                          No waiting patients in queue for {doctorHospital} right now.
+                        </div>
+                      ) : (
+                        waitingQueueForDoctor.slice(0, 4).map((apt) => (
                           <div
                             key={apt.id}
                             className="py-3 flex items-center justify-between hover:bg-slate-50 px-2 rounded-xl transition-colors"
@@ -297,7 +413,7 @@ export const DoctorDashboard = () => {
                               </span>
                               <div>
                                 <p className="text-xs font-bold text-slate-800">{apt.patientName}</p>
-                                <span className="text-[11px] text-slate-400">{apt.time}</span>
+                                <span className="text-[11px] text-slate-400">{apt.time} • {apt.hospital}</span>
                               </div>
                             </div>
 
@@ -312,7 +428,8 @@ export const DoctorDashboard = () => {
                               <ChevronRight className="w-3.5 h-3.5" />
                             </button>
                           </div>
-                        ))}
+                        ))
+                      )}
                     </div>
                   </div>
 
@@ -330,13 +447,22 @@ export const DoctorDashboard = () => {
             </div>
           )}
 
-          {/* SECTION 2: Today's Queue */}
+          {/* ========================================================= */}
+          {/* SECTION 2: Today's Queue (Strictly This Hospital)         */}
+          {/* ========================================================= */}
           {activeTab === 'today-queue' && (
             <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-card">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5 mb-6">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">Today's Queue</h2>
-                  <p className="text-xs text-slate-500">Manage patient queue, call tokens, and monitor status.</p>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                      {doctorHospital}
+                    </span>
+                    <h2 className="text-xl font-bold text-slate-900">Today's OPD Queue</h2>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Showing patient tokens strictly registered for {currentDoc.name} at {doctorHospital}.
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -358,15 +484,18 @@ export const DoctorDashboard = () => {
               </div>
 
               <div className="divide-y divide-slate-100">
-                {appointments
-                  .filter(a => a.status === 'In Consultation' || a.status === 'Waiting')
-                  .map((apt) => {
+                {queueToDisplay.length === 0 ? (
+                  <div className="py-12 text-center text-xs text-slate-400">
+                    No active or waiting tokens currently scheduled at {doctorHospital}.
+                  </div>
+                ) : (
+                  queueToDisplay.map((apt) => {
                     const isServing = apt.status === 'In Consultation';
                     return (
                       <div
                         key={apt.id}
                         className={`py-4 px-3 flex items-center justify-between rounded-2xl transition-all ${
-                          isServing ? 'bg-blue-50/60 border border-blue-200' : 'hover:bg-slate-50'
+                          isServing ? 'bg-blue-50/70 border border-blue-200 shadow-sm' : 'hover:bg-slate-50'
                         }`}
                       >
                         <div className="flex items-center gap-4">
@@ -380,12 +509,12 @@ export const DoctorDashboard = () => {
                               <h4 className="text-sm font-bold text-slate-800">{apt.patientName}</h4>
                               {isServing && (
                                 <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
-                                  In Cabin
+                                  Currently in Cabin
                                 </span>
                               )}
                             </div>
                             <p className="text-xs text-slate-400 mt-0.5">
-                              {apt.time} • {apt.reason || 'Consultation'}
+                              {apt.time} • {apt.hospital} ({apt.department})
                             </p>
                           </div>
                         </div>
@@ -398,23 +527,27 @@ export const DoctorDashboard = () => {
                               setActiveTab('patients');
                             }}
                             className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+                            title="View Patient Record"
                           >
                             <ArrowRight className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
                     );
-                  })}
+                  })
+                )}
               </div>
 
               <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
-                <span>Total Waiting in Lounge: {waitingToday}</span>
-                <span>OPD Status: Active</span>
+                <span>Waiting in Lounge: <strong>{waitingToday} patients</strong></span>
+                <span>Hospital: <strong>{doctorHospital}</strong></span>
               </div>
             </div>
           )}
 
-          {/* SECTION 3: Patient Details */}
+          {/* ========================================================= */}
+          {/* SECTION 3: Patient Details                                */}
+          {/* ========================================================= */}
           {(activeTab === 'patients' || activeTab === 'consultation') && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
@@ -423,92 +556,100 @@ export const DoctorDashboard = () => {
                 <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                   <div>
                     <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">
-                      Patient Details
+                      Patient Details • {doctorHospital}
                     </span>
                     <h3 className="text-xl font-black text-slate-900 mt-0.5">
-                      {selectedPatientRecord?.token || 'A-12'} — {selectedPatientRecord?.patientName || 'Rahul Verma'}
+                      {selectedPatientRecord?.token || 'None'} — {selectedPatientRecord?.patientName || 'No Patient Selected'}
                     </h3>
                   </div>
-                  <StatusBadge status={selectedPatientRecord?.status || 'In Consultation'} size="md" />
+                  {selectedPatientRecord && <StatusBadge status={selectedPatientRecord.status} size="md" />}
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
-                    <span className="text-slate-400 font-medium block">Age & Gender</span>
-                    <span className="font-bold text-slate-800 text-sm">
-                      {selectedPatientRecord?.patientAge || 28} Years, {selectedPatientRecord?.patientGender || 'Male'}
-                    </span>
-                  </div>
-                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
-                    <span className="text-slate-400 font-medium block">Contact Number</span>
-                    <span className="font-bold text-slate-800 text-sm">
-                      {selectedPatientRecord?.patientPhone || '98765 43210'}
-                    </span>
-                  </div>
-                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
-                    <span className="text-slate-400 font-medium block">Appointment Time</span>
-                    <span className="font-bold text-slate-800 text-sm">
-                      {selectedPatientRecord?.time || '11:15 AM'}
-                    </span>
-                  </div>
-                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
-                    <span className="text-slate-400 font-medium block">Department</span>
-                    <span className="font-bold text-slate-800 text-sm">
-                      {selectedPatientRecord?.department || 'Cardiology'}
-                    </span>
-                  </div>
-                </div>
+                {selectedPatientRecord ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
+                        <span className="text-slate-400 font-medium block">Age & Gender</span>
+                        <span className="font-bold text-slate-800 text-sm">
+                          {selectedPatientRecord.patientAge || 28} Years, {selectedPatientRecord.patientGender || 'Male'}
+                        </span>
+                      </div>
+                      <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
+                        <span className="text-slate-400 font-medium block">Contact Number</span>
+                        <span className="font-bold text-slate-800 text-sm">
+                          {selectedPatientRecord.patientPhone || '98765 43210'}
+                        </span>
+                      </div>
+                      <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
+                        <span className="text-slate-400 font-medium block">Appointment Time</span>
+                        <span className="font-bold text-slate-800 text-sm">
+                          {selectedPatientRecord.time || '11:15 AM'}
+                        </span>
+                      </div>
+                      <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100">
+                        <span className="text-slate-400 font-medium block">Hospital & Dept</span>
+                        <span className="font-bold text-slate-800 text-sm">
+                          {selectedPatientRecord.hospital} ({selectedPatientRecord.department})
+                        </span>
+                      </div>
+                    </div>
 
-                <div className="space-y-4">
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                      Reason for Visit
-                    </span>
-                    <p className="text-xs font-medium text-slate-800">
-                      {selectedPatientRecord?.reason || 'Chest pain & discomfort. Palpitations during light exertion.'}
-                    </p>
-                  </div>
+                    <div className="space-y-4">
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                          Reason for Visit
+                        </span>
+                        <p className="text-xs font-medium text-slate-800">
+                          {selectedPatientRecord.reason || 'General medical consultation.'}
+                        </p>
+                      </div>
 
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                      Medical History & Allergies
-                    </span>
-                    <p className="text-xs font-medium text-slate-800">
-                      {selectedPatientRecord?.medicalHistory || 'No known allergies. Previously treated for mild BP in 2024.'}
-                    </p>
-                  </div>
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                          Medical History & Allergies
+                        </span>
+                        <p className="text-xs font-medium text-slate-800">
+                          {selectedPatientRecord.medicalHistory || 'No major allergies reported.'}
+                        </p>
+                      </div>
 
-                  <div className="p-4 bg-blue-50/60 rounded-2xl border border-blue-100">
-                    <span className="text-xs font-bold text-blue-700 uppercase tracking-wider block mb-1">
-                      Doctor Clinical Notes
-                    </span>
-                    <p className="text-xs font-medium text-slate-800">
-                      {selectedPatientRecord?.notes || 'Patient is stable. Resting pulse 76 bpm. Advised standard ECG.'}
-                    </p>
+                      <div className="p-4 bg-blue-50/60 rounded-2xl border border-blue-100">
+                        <span className="text-xs font-bold text-blue-700 uppercase tracking-wider block mb-1">
+                          Doctor Clinical Notes
+                        </span>
+                        <p className="text-xs font-medium text-slate-800">
+                          {selectedPatientRecord.notes || 'No notes entered yet.'}
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-12 text-center text-xs text-slate-400">
+                    Select a patient from today's queue to review details.
                   </div>
-                </div>
+                )}
               </div>
 
-              {/* Consultation Desk Actions (Section 4) */}
+              {/* Consultation Desk Actions */}
               <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-card flex flex-col justify-between space-y-6">
                 <div>
                   <div className="border-b border-slate-100 pb-4 mb-5">
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">
-                          Consultation Actions
+                          Consultation Desk Controls
                         </span>
                         <h3 className="text-lg font-bold text-slate-900 mt-0.5">
-                          Desk Controls: {activeServing?.token || 'A-12'}
+                          {activeServing ? `Token: ${activeServing.token} (${activeServing.patientName})` : 'Desk Ready'}
                         </h3>
                       </div>
                       <span className="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-full border border-blue-200">
-                        11:15 AM • 28 M
+                        {doctorHospital}
                       </span>
                     </div>
                   </div>
 
-                  {/* 3 Main Action Buttons matching reference */}
+                  {/* 3 Main Action Buttons */}
                   <div className="space-y-3">
                     <button
                       onClick={completeCurrentConsultation}
@@ -523,22 +664,14 @@ export const DoctorDashboard = () => {
                       className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-xs font-bold shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-2"
                     >
                       <RotateCcw className="w-5 h-5" />
-                      <span>Skip Patient (Move to Back)</span>
-                    </button>
-
-                    <button
-                      onClick={() => alert(`Appointment cancelled for ${activeServing?.token}`)}
-                      className="w-full py-3.5 px-4 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-xs font-bold shadow-md shadow-rose-600/20 transition-all flex items-center justify-center gap-2"
-                    >
-                      <XCircle className="w-5 h-5" />
-                      <span>Cancel Appointment</span>
+                      <span>Skip Patient (Move to Back of Queue)</span>
                     </button>
                   </div>
 
                   {/* Add Note field */}
                   <div className="mt-6">
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                      Add Clinical Note (Optional)
+                      Add Clinical Note / Prescription
                     </label>
                     <textarea
                       rows={3}
@@ -560,19 +693,21 @@ export const DoctorDashboard = () => {
 
                 <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-[11px] text-amber-800 flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                  <span>Clicking "Complete Consultation" auto-notifies the next queued patient.</span>
+                  <span>Only patients booked under {doctorHospital} are displayed and managed on this desk.</span>
                 </div>
               </div>
 
             </div>
           )}
 
-          {/* SECTION 5: Availability */}
+          {/* ========================================================= */}
+          {/* SECTION 5: Availability                                   */}
+          {/* ========================================================= */}
           {activeTab === 'availability' && (
             <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-card max-w-3xl mx-auto">
               <div className="border-b border-slate-100 pb-4 mb-6">
-                <h2 className="text-xl font-bold text-slate-900">Set Your Availability</h2>
-                <p className="text-xs text-slate-500">Manage your weekly working hours and OPD shifts.</p>
+                <h2 className="text-xl font-bold text-slate-900">Set Weekly Availability</h2>
+                <p className="text-xs text-slate-500">Manage your working hours at {doctorHospital}.</p>
               </div>
 
               <div className="space-y-4">
@@ -630,17 +765,26 @@ export const DoctorDashboard = () => {
             </div>
           )}
 
-          {/* SECTION 6: Appointments */}
+          {/* ========================================================= */}
+          {/* SECTION 6: Appointments (STRICTLY THIS HOSPITAL)          */}
+          {/* ========================================================= */}
           {activeTab === 'appointments' && (
             <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-card">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-6">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">Appointments Schedule</h2>
-                  <p className="text-xs text-slate-500">View upcoming and completed patient appointments.</p>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
+                      {doctorHospital}
+                    </span>
+                    <h2 className="text-xl font-bold text-slate-900">Appointments Schedule</h2>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Showing patient appointments strictly booked under <strong>{doctorHospital}</strong>.
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {['Upcoming', 'Completed'].map((tab) => (
+                  {['Upcoming', 'Completed', 'All'].map((tab) => (
                     <button
                       key={tab}
                       onClick={() => setDoctorAptTab(tab)}
@@ -662,6 +806,7 @@ export const DoctorDashboard = () => {
                     <tr>
                       <th className="py-3.5 px-4">Token</th>
                       <th className="py-3.5 px-4">Patient Name</th>
+                      <th className="py-3.5 px-4">Hospital</th>
                       <th className="py-3.5 px-4">Date & Time</th>
                       <th className="py-3.5 px-4">Reason</th>
                       <th className="py-3.5 px-4">Status</th>
@@ -669,45 +814,60 @@ export const DoctorDashboard = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {docFilteredApts.map((apt) => (
-                      <tr key={apt.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="py-3.5 px-4">
-                          <span className="font-black text-slate-900 bg-slate-100 px-2.5 py-1 rounded-xl">
-                            {apt.token}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 font-bold text-slate-800">
-                          {apt.patientName}
-                        </td>
-                        <td className="py-3.5 px-4 text-slate-600">
-                          {apt.date} • {apt.time}
-                        </td>
-                        <td className="py-3.5 px-4 text-slate-500">
-                          {apt.reason || 'General Checkup'}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <StatusBadge status={apt.status} />
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <button
-                            onClick={() => {
-                              setSelectedPatientRecord(apt);
-                              setActiveTab('patients');
-                            }}
-                            className="font-bold text-blue-600 hover:underline"
-                          >
-                            Examine
-                          </button>
+                    {docFilteredApts.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-12 text-center text-xs text-slate-400">
+                          No {doctorAptTab.toLowerCase()} appointments found for {doctorHospital}.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      docFilteredApts.map((apt) => (
+                        <tr key={apt.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="py-3.5 px-4">
+                            <span className="font-black text-slate-900 bg-slate-100 px-2.5 py-1 rounded-xl">
+                              {apt.token}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 font-bold text-slate-800">
+                            {apt.patientName}
+                          </td>
+                          <td className="py-3.5 px-4 font-medium text-slate-600">
+                            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px] font-semibold">
+                              {apt.hospital}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-600">
+                            {apt.date} • {apt.time}
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-500">
+                            {apt.reason || 'General Checkup'}
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <StatusBadge status={apt.status} />
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <button
+                              onClick={() => {
+                                setSelectedPatientRecord(apt);
+                                setActiveTab('patients');
+                              }}
+                              className="font-bold text-blue-600 hover:underline"
+                            >
+                              Examine
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
             </div>
           )}
 
-          {/* SECTION 7: Doctor Profile */}
+          {/* ========================================================= */}
+          {/* SECTION 7: Doctor Profile                                 */}
+          {/* ========================================================= */}
           {activeTab === 'profile' && (
             <div className="max-w-2xl mx-auto space-y-6">
               <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-100 shadow-card text-center">
@@ -718,7 +878,11 @@ export const DoctorDashboard = () => {
                 />
                 <h2 className="text-xl font-bold text-slate-900 mt-4">{currentDoc.name}</h2>
                 <p className="text-xs text-blue-600 font-semibold">{currentDoc.specialization} • {currentDoc.department}</p>
-                <p className="text-xs text-slate-400 mt-1">{currentDoc.hospital} • {currentDoc.room}</p>
+                <p className="text-xs text-slate-500 font-bold mt-1 flex items-center justify-center gap-1">
+                  <Building2 className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{doctorHospital}</span>
+                  <span>• Room {currentDoc.room}</span>
+                </p>
 
                 <div className="grid grid-cols-3 gap-3 mt-6 pt-6 border-t border-slate-100">
                   <div className="p-3 bg-slate-50 rounded-2xl">
@@ -730,7 +894,7 @@ export const DoctorDashboard = () => {
                     <p className="text-sm font-bold text-slate-800">⭐ {currentDoc.rating || 4.9}</p>
                   </div>
                   <div className="p-3 bg-slate-50 rounded-2xl">
-                    <span className="text-[10px] text-slate-400 font-bold uppercase">Today's Patients</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase">Hospital Patients</span>
                     <p className="text-sm font-bold text-slate-800">{totalPatientsToday}</p>
                   </div>
                 </div>
@@ -745,7 +909,11 @@ export const DoctorDashboard = () => {
                     <span className="font-bold text-slate-800">{currentDoc.email}</span>
                   </div>
                   <div className="p-3.5 bg-slate-50 rounded-xl flex items-center justify-between">
-                    <span className="text-slate-400 font-medium">Assigned Cabin</span>
+                    <span className="text-slate-400 font-medium">Assigned Hospital</span>
+                    <span className="font-bold text-blue-700">{doctorHospital}</span>
+                  </div>
+                  <div className="p-3.5 bg-slate-50 rounded-xl flex items-center justify-between">
+                    <span className="text-slate-400 font-medium">Assigned OPD Cabin</span>
                     <span className="font-bold text-slate-800">{currentDoc.room}</span>
                   </div>
                 </div>
@@ -758,4 +926,3 @@ export const DoctorDashboard = () => {
     </div>
   );
 };
-

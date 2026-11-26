@@ -2,6 +2,8 @@ import { Appointment } from '../models/Appointment.js';
 import { Doctor } from '../models/Doctor.js';
 import { Department } from '../models/Department.js';
 import { Notification } from '../models/Notification.js';
+import { Hospital } from '../models/Hospital.js';
+import { User } from '../models/User.js';
 
 // @desc    Book an appointment & automatically generate sequential digital token
 // @route   POST /api/patient/appointments
@@ -107,6 +109,46 @@ export const getNotifications = async (req, res) => {
   try {
     const notifications = await Notification.find({ user: req.user._id }).sort({ createdAt: -1 });
     res.json({ success: true, count: notifications.length, data: notifications });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get all registered network hospitals for patients
+// @route   GET /api/patient/hospitals
+// @access  Public / Patient
+export const getRegisteredHospitals = async (req, res) => {
+  try {
+    const hospitals = await Hospital.find({ status: 'Active' });
+    res.json({ success: true, count: hospitals.length, data: hospitals });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Update patient profile details
+// @route   PUT /api/patient/profile
+// @access  Patient
+export const updateProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const { name, phone, age, gender, bloodGroup, address, emergencyContact, allergies, medicalHistory } = req.body;
+    if (name) user.name = name;
+    if (phone) user.phone = phone;
+    if (age) user.age = age;
+    if (gender) user.gender = gender;
+    if (bloodGroup) user.bloodGroup = bloodGroup;
+    if (address) user.address = address;
+    if (emergencyContact) user.emergencyContact = emergencyContact;
+    if (allergies) user.allergies = allergies;
+    if (medicalHistory) user.medicalHistory = medicalHistory;
+
+    await user.save();
+    res.json({ success: true, message: 'Profile updated successfully', data: user });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

@@ -168,27 +168,36 @@ export const DoctorLoginPage = () => {
               </button>
             </form>
 
-            {/* Quick Demo Fill Buttons */}
+            {/* Quick Demo Fill Buttons across Different Hospitals */}
             <div className="mt-6 pt-5 border-t border-slate-800 space-y-2">
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider text-center mb-2">
-                Quick Demo Accounts (Click to auto-fill):
+                Quick Demo Accounts by Hospital (Click to auto-fill):
               </p>
-              <div className="space-y-1.5">
-                {doctors.slice(0, 3).map((doc) => (
+              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                {doctors.map((doc) => (
                   <button
                     key={doc.id}
                     type="button"
                     onClick={() => handleQuickFill(doc)}
-                    className="w-full p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800/80 border border-slate-800 flex items-center justify-between text-left transition-all text-xs"
+                    className="w-full p-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800/80 border border-slate-800 hover:border-blue-500/50 flex items-center justify-between text-left transition-all text-xs group"
                   >
-                    <div className="flex items-center gap-2">
-                      <img src={doc.avatar} alt={doc.name} className="w-7 h-7 rounded-full object-cover" />
-                      <div>
-                        <span className="font-bold text-white block text-xs">{doc.name}</span>
-                        <span className="text-[10px] text-slate-400">{doc.department}</span>
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <img src={doc.avatar} alt={doc.name} className="w-8 h-8 rounded-full object-cover ring-1 ring-blue-500/30 flex-shrink-0" />
+                      <div className="min-w-0">
+                        <span className="font-bold text-white block text-xs truncate group-hover:text-blue-300 transition-colors">
+                          {doc.name}
+                        </span>
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-400 truncate">
+                          <span>{doc.department}</span>
+                          <span>•</span>
+                          <span className="font-semibold text-blue-400 truncate flex items-center gap-0.5">
+                            <Building2 className="w-2.5 h-2.5 flex-shrink-0" />
+                            <span>{doc.hospital}</span>
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <span className="text-[10px] font-mono text-blue-400">Auto Fill →</span>
+                    <span className="text-[10px] font-mono text-blue-400 flex-shrink-0 pl-2">Auto Fill →</span>
                   </button>
                 ))}
               </div>

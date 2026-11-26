@@ -11,7 +11,11 @@ export const getDoctorQueue = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Doctor profile not found' });
     }
 
-    const appointments = await Appointment.find({ doctor: doctor._id }).sort({ createdAt: 1 });
+    const query = { doctor: doctor._id };
+    if (doctor.hospital) {
+      query.hospital = doctor.hospital;
+    }
+    const appointments = await Appointment.find(query).sort({ createdAt: 1 });
     const waiting = appointments.filter(a => a.status === 'Waiting');
     const completed = appointments.filter(a => a.status === 'Completed');
     const inConsultation = appointments.find(a => a.status === 'In Consultation');
